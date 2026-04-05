@@ -1,0 +1,369 @@
+#!/usr/bin/env python3
+"""
+transcribe — Transcrição de áudio via Whisper
+Uso: transcribe [pasta]
+     Se pasta omitida, usa a pasta atual.
+"""
+
+import sys
+import time
+import wave
+import tempfile
+import subprocess
+import re
+import numpy as np
+from datetime import datetime
+from pathlib import Path
+
+try:
+    import whisper
+except ImportError:
+    print("❌ whisper não instalado. Rode: pip install openai-whisper")
+    sys.exit(1)
+
+# ─────────────────────────────────────────────
+CAMINHO_SAIDA = Path("~/Documentos/Notes/+/_output").expanduser()
+EXTS = {'.mp3', '.wav', '.ogg', '.opus', '.m4a', '.mp4', '.flac', '.mov', '.mkv', '.webm'}
+# ─────────────────────────────────────────────
+
+
+def sep(titulo=""):
+    print(f"\n{'─' * 44}")
+    if titulo:
+        print(f"  {titulo}")
+        print(f"{'─' * 44}")
+
+
+def escolher(prompt, opcoes: list[str], permite_vazio=False) -> str:
+    """Menu numerado, retorna a opção escolhida."""
+    print(f"\n{prompt}")
+    for i, op in enumerate(opcoes, 1):
+        print(f"  [{i}] {op}")
+    while True:
+        entrada = input("  → ").strip()
+        if permite_vazio and entrada == "":
+            return ""
+        if entrada.isdigit() and 1 <= int(entrada) <= len(opcoes):
+            return opcoes[int(entrada) - 1]
+        print("  ⚠️  Opção inválida.")
+
+
+def listar_audios(pasta: Path) -> list[Path]:
+    return sorted(
+        [p for p in pasta.rglob("*") if p.suffix.lower() in EXTS],
+        key=lambda f: (str(f.parent), f.name.lower())
+    )
+
+
+def converter_para_wav(arquivo: Path) -> Path:
+    out = Path(tempfile.gettempdir()) / f"{arquivo.stem}_{arquivo.stat().st_size}.wav"
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(arquivo), "-ac", "1", "-ar", "16000", "-vn", str(out)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    return out
+
+
+def wav_valido(wav: Path) -> bool:
+    try:
+        with wave.open(str(wav)) as f:
+            n = f.getnframes()
+            dur = n / f.getframerate()
+            if dur < 0.2:
+                return False
+            audio = np.frombuffer(f.readframes(n), dtype=np.int16)
+            return not np.all(audio == 0)
+    except:
+        return False
+
+
+def duracao_wav(wav: Path) -> float:
+    try:
+        with wave.open(str(wav)) as f:
+            return f.getnframes() / float(f.getframerate())
+    except:
+        return 0.0
+
+
+def formatar_tempo(s: float) -> str:
+    s = int(s)
+    h, r = divmod(s, 3600)
+    m, s = divmod(r, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def slugify(texto: str) -> str:
+    texto = texto.lower().strip()
+    texto = re.sub(r'[^\w\s-]', '', texto)
+    texto = re.sub(r'[\s_]+', '-', texto)
+    return re.sub(r'-+', '-', texto)
+
+
+# ═══════════════════════════════════════════════════════
+#  MODOS DE SAÍDA
+# ═══════════════════════════════════════════════════════
+
+def modo_rapido(audios: list[Path], pasta_base: Path, modelo):
+    """Saída .txt simples, sem timestamps."""
+    CAMINHO_SAIDA.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = CAMINHO_SAIDA / f"transcricao_rapida_{ts}.txt"
+
+    total = len(audios)
+    with open(out_path, "a", encoding="utf-8") as f:
+        for i, audio in enumerate(audios, 1):
+            print(f"\n({i}/{total}) ▶  {audio.name}")
+            wav = converter_para_wav(audio)
+            if not wav_valido(wav):
+                print("  ❌ inválido/silencioso — ignorado")
+                continue
+            t0 = time.time()
+            try:
+                texto = modelo.transcribe(str(wav), fp16=False)["text"].strip()
+                dt = time.time() - t0
+                header = f"[{datetime.now():%Y-%m-%d %H:%M:%S}] [{audio.name}]"
+                linha = f"{header}\n{texto} [{dt:.1f}s]"
+                print(f"  ✔  {dt:.1f}s")
+                f.write(linha + "\n\n")
+            except Exception as e:
+                print(f"  ❌ {e}")
+
+    print(f"\n📄 Salvo em: {out_path}")
+
+
+def modo_md_simples(audios: list[Path], pasta_base: Path, modelo):
+    """Saída .md agrupada por subpasta, sem timestamps."""
+    CAMINHO_SAIDA.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = CAMINHO_SAIDA / f"transcricoes_{ts}.md"
+    hoje = datetime.now().strftime("%Y-%m-%d")
+
+    grupos: dict[str, list[Path]] = {}
+    for a in audios:
+        rel = str(a.parent.relative_to(pasta_base))
+        grupos.setdefault(rel, []).append(a)
+
+    total = len(audios)
+    contador = 0
+
+    with open(out_path, "w", encoding="utf-8") as md:
+        md.write(f"---\ncreated: \"[[{hoje}]]\"\ntags:\n  - transcriptions\n---\n\n")
+
+        for pasta, arquivos in grupos.items():
+            md.write(f"## 📁 {pasta}\n\n")
+            for audio in sorted(arquivos, key=lambda a: a.name.lower()):
+                contador += 1
+                print(f"\n({contador}/{total}) ▶  {audio.name}")
+                wav = converter_para_wav(audio)
+                if not wav_valido(wav):
+                    print("  ❌ inválido/silencioso — ignorado")
+                    continue
+                t0 = time.time()
+                try:
+                    texto = modelo.transcribe(str(wav), fp16=False)["text"].strip()
+                    print(f"  ✔  {time.time()-t0:.1f}s")
+                    md.write(f"- {audio.name}\n   - {texto}\n")
+                except Exception as e:
+                    print(f"  ❌ {e}")
+
+        md.write("\n")
+
+    print(f"\n📄 Salvo em: {out_path}")
+
+
+def modo_timestamps(audios: list[Path], pasta_base: Path, modelo, silencio_min: float):
+    """Saída .md completa: timestamps, silêncios, sumário navegável."""
+    CAMINHO_SAIDA.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    out_path = CAMINHO_SAIDA / f"transcricoes_ts_{ts}.md"
+    hoje = datetime.now().strftime("%Y-%m-%d")
+
+    grupos: dict[str, list[Path]] = {}
+    for a in audios:
+        rel = str(a.parent.relative_to(pasta_base))
+        grupos.setdefault(rel, []).append(a)
+
+    # ── Primeira passagem: transcreve tudo ──────────────────────────────
+    dados: dict[str, list[tuple]] = {}
+    total = len(audios)
+    contador = 0
+
+    for pasta, arquivos in grupos.items():
+        dados[pasta] = []
+        for audio in sorted(arquivos, key=lambda a: a.name.lower()):
+            contador += 1
+            print(f"\n({contador}/{total}) ▶  {audio.name}")
+            wav = converter_para_wav(audio)
+            if not wav_valido(wav):
+                print("  ❌ inválido/silencioso — ignorado")
+                continue
+            dur = duracao_wav(wav)
+            t0 = time.time()
+            try:
+                resultado = modelo.transcribe(str(wav), fp16=False)
+                print(f"  ✔  {time.time()-t0:.1f}s")
+                itens = processar_segmentos(resultado.get("segments", []), silencio_min)
+                dados[pasta].append((audio, itens, dur))
+            except Exception as e:
+                print(f"  ❌ {e}")
+
+    # ── Sumário ──────────────────────────────────────────────────────────
+    estrutura = []
+    for pasta, registros in dados.items():
+        arqs = []
+        for audio, itens, dur in registros:
+            n = sum(1 for i in itens if i[0] == "linha")
+            ancora = slugify(f"{pasta}-{audio.stem}")
+            arqs.append((audio.name, ancora, dur, n))
+        if arqs:
+            estrutura.append((pasta, arqs))
+
+    with open(out_path, "w", encoding="utf-8") as md:
+        md.write(
+            f"---\ncreated: \"[[{hoje}]]\"\nsource: \"{pasta_base}\"\n"
+            f"model: whisper\nsilence_gap: {silencio_min}s\n"
+            f"tags:\n  - transcriptions\n---\n\n"
+        )
+        md.write(f"# 🎙️ Transcrições — {hoje}\n\n")
+        md.write(gerar_sumario(estrutura))
+        md.write("\n")
+
+        for pasta, registros in dados.items():
+            if not registros:
+                continue
+            md.write(f'<a id="{slugify(pasta)}"></a>\n\n## 📁 {pasta}\n\n')
+            for audio, itens, dur in registros:
+                n = sum(1 for i in itens if i[0] == "linha")
+                ancora = slugify(f"{pasta}-{audio.stem}")
+                md.write(f'<a id="{ancora}"></a>\n\n### 🎞️ {audio.name}\n\n')
+                md.write(
+                    f"> ⏱ Duração: `{formatar_tempo(dur)}` · "
+                    f"📝 {n} segmento(s) · "
+                    f"📂 `{audio.relative_to(pasta_base)}`\n\n"
+                )
+                for item in itens:
+                    if item[0] == "linha":
+                        _, t_ini, t_fim, texto = item
+                        md.write(f"- `{formatar_tempo(t_ini)} → {formatar_tempo(t_fim)}` {texto}\n")
+                    elif item[0] == "silencio":
+                        _, ds = item
+                        md.write(f"\n> 🔇 *silêncio de {ds:.1f}s*\n\n")
+                md.write("\n[⬆ voltar ao sumário](#-sumário)\n\n---\n\n")
+
+    print(f"\n📄 Salvo em: {out_path}")
+
+
+def processar_segmentos(segments, silencio_min):
+    resultado = []
+    prev_end = None
+    for seg in segments:
+        texto = seg["text"].strip()
+        if not texto:
+            continue
+        start, end = seg["start"], seg["end"]
+        if prev_end is not None and (start - prev_end) >= silencio_min:
+            resultado.append(("silencio", start - prev_end))
+        resultado.append(("linha", start, end, texto))
+        prev_end = end
+    return resultado
+
+
+def gerar_sumario(estrutura):
+    linhas = ["## 📋 Sumário\n"]
+    total_arqs = sum(len(a) for _, a in estrutura)
+    total_dur  = sum(d for _, a in estrutura for _, _, d, _ in a)
+    linhas.append(f"> **{total_arqs} arquivo(s)** · **duração total: {formatar_tempo(total_dur)}**\n\n")
+    for pasta, arqs in estrutura:
+        linhas.append(f"\n### 📁 [{pasta}](#{slugify(pasta)})\n")
+        for nome, ancora, dur, n in arqs:
+            linhas.append(f"- [{nome}](#{ancora}) — ⏱ `{formatar_tempo(dur)}` — {n} segmento(s)\n")
+    linhas.append("\n---\n")
+    return "".join(linhas)
+
+
+# ═══════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════
+
+def main():
+    # Pasta de entrada: argumento ou pwd
+    if len(sys.argv) > 1:
+        pasta_base = Path(sys.argv[1]).resolve()
+    else:
+        pasta_base = Path.cwd()
+
+    sep("🎙️  transcribe")
+    print(f"  Pasta: {pasta_base}")
+
+    if not pasta_base.exists():
+        print(f"❌ Pasta não encontrada: {pasta_base}")
+        sys.exit(1)
+
+    audios = listar_audios(pasta_base)
+    if not audios:
+        print("❌ Nenhum arquivo de áudio encontrado.")
+        sys.exit(0)
+
+    print(f"  {len(audios)} arquivo(s) encontrado(s)")
+
+    # ── Formato de saída ────────────────────────────────────────────────
+    sep("📄 Formato de saída")
+    formato = escolher(
+        "Escolha o formato:",
+        [
+            "Rápido — .txt simples (sem timestamps)",
+            "Markdown — .md agrupado por pasta (sem timestamps)",
+            "Markdown completo — .md com timestamps, silêncios e sumário",
+        ]
+    )
+
+    # ── Silêncio mínimo (só no modo completo) ───────────────────────────
+    silencio_min = 2.0
+    if "completo" in formato:
+        sep("🔇 Detecção de silêncio")
+        while True:
+            entrada = input("  Silêncio mínimo para separação (segundos) [2]: ").strip()
+            if entrada == "":
+                break
+            try:
+                silencio_min = float(entrada)
+                if silencio_min > 0:
+                    break
+                print("  ⚠️  Deve ser maior que 0.")
+            except ValueError:
+                print("  ⚠️  Número inválido.")
+
+    # ── Modelo Whisper ───────────────────────────────────────────────────
+    sep("🤖 Modelo Whisper")
+    modelo_nome = escolher(
+        "Escolha o modelo (mais preciso = mais lento):",
+        ["tiny", "base", "small", "medium", "large"]
+    )
+
+    # ── Confirmação ─────────────────────────────────────────────────────
+    sep("✅ Confirmar")
+    print(f"  Pasta:   {pasta_base}")
+    print(f"  Áudios:  {len(audios)}")
+    print(f"  Formato: {formato}")
+    print(f"  Modelo:  {modelo_nome}")
+    print(f"  Saída:   {CAMINHO_SAIDA}")
+    confirmar = input("\n  Iniciar? [S/n]: ").strip().lower()
+    if confirmar == "n":
+        print("  Cancelado.")
+        sys.exit(0)
+
+    # ── Carrega modelo e executa ─────────────────────────────────────────
+    sep("⏳ Carregando modelo...")
+    modelo = whisper.load_model(modelo_nome)
+
+    sep("🚀 Transcrevendo")
+    if "Rápido" in formato:
+        modo_rapido(audios, pasta_base, modelo)
+    elif "completo" in formato:
+        modo_timestamps(audios, pasta_base, modelo, silencio_min)
+    else:
+        modo_md_simples(audios, pasta_base, modelo)
+
+
+if __name__ == "__main__":
+    main()

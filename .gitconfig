@@ -1,0 +1,10 @@
+[user]
+	name = Valdenir Nonaka
+	email = 159387242+NonakaVal@users.noreply.github.com
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+[filter "lfs"]
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+	clean = git-lfs clean -- %f
