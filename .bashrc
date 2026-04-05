@@ -116,3 +116,29 @@ fi
 
 export PATH="$HOME/.cargo/bin:$PATH"
 export PATH="$HOME/.local/bin:$PATH"
+
+
+newgapp() {
+    read -p "Nome do app: " nome
+    read -p "URL: " url
+    read -p "Caminho do ícone (Enter para padrão): " icone
+
+    [ -z "$icone" ] && icone="google-chrome"
+
+    desktop="[Desktop Entry]
+Version=1.0
+Terminal=false
+Type=Application
+Name=$nome
+Exec=google-chrome --app=$url
+Icon=$icone
+StartupWMClass=chrome"
+
+    echo "$desktop" > "$HOME/Área de Trabalho/${nome}.desktop"
+    echo "$desktop" > "$HOME/.local/share/applications/${nome}.desktop"
+
+    chmod +x "$HOME/Área de Trabalho/${nome}.desktop"
+    update-desktop-database ~/.local/share/applications/
+
+    echo "✓ App '$nome' criado com sucesso"
+}
