@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Pasta atual
+BASE_DIR="$(pwd)"
+OUTPUT_DIR="$BASE_DIR/resolvecodec"
+
+mkdir -p "$OUTPUT_DIR"
+
+# Extensões suportadas
+mapfile -t files < <(find "$BASE_DIR" -type f \( \
+    -iname "*.mp4" -o \
+    -iname "*.mkv" -o \
+    -iname "*.avi" -o \
+    -iname "*.mov" -o \
+    -iname "*.webm" \
+\))
+
+convert_file () {
+    file="$1"
+
+    rel_path="${file#$BASE_DIR/}"
+    dir_path="$(dirname "$rel_path")"
+    filename="$(basename "$file")"
+    name="${filename%.*}"
+
+    mkdir -p "$OUTPUT_DIR/$dir_path"
+
+    output_file="$OUTPUT_DIR/$dir_path/${name}.mov"
+
+    echo "🎬 Convertendo: $rel_path"
+
+    ffmpeg -y -i "$file" \
+        -c:v prores -profile:v 3 \
+        -c:a pcm_s16le \
+        "$output_file"
+
+    echo "✅ Finalizado: $output_file"
+    echo "-----------------------------------"
+}
+
+# Se usar --all
+if [[ "$1" == "--all" ]]; then
+    echo "🚀 Convertendo TODOS os vídeos..."
+    for file in "${files[@]}"; do
+        convert_file "$file"
+    done
+    echo "🏁 Concluído!"
+    exit 0
+fi
+
+# Modo interativo
+echo "📂 Vídeos encontrados:"
+for i in "${!files[@]}"; do
+    echo "[$i] ${files[$i]}"
+done
+
+echo ""
+read -p "👉 Escolha o número do vídeo: " choice
+
+if [[ -z "${files[$choice]}" ]]; then
+    echo "❌ Opção inválida"
+    exit 1
+fi
+
+convert_file "${files[$choice]}"
