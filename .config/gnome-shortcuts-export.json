@@ -1,0 +1,97 @@
+[
+  {
+    "name": "Windows",
+    "shortcuts": [
+      { "key": "⌘ ⭾", "description": "switch" },
+      { "key": "⎇ ␣", "description": "menu" },
+      { "key": "⌘ X", "description": "close" },
+      { "key": "⌘ H", "description": "minimize" },
+      { "key": "⎇ F10", "description": "maximize" },
+      { "key": "⇧ ⌘ ⭾", "description": "switch back" },
+      { "key": "⎇ ⎋", "description": "cycle" },
+      { "key": "⇧ ⎇ ⎋", "description": "cycle back" },
+      { "key": "⎇ F6", "description": "cycle group" },
+      { "key": "⇧ ⌘ W", "description": "toggle all" },
+      { "key": "⎇ F7", "description": "move" },
+      { "key": "⎇ F8", "description": "resize" },
+      { "key": "⌘ ⇧ ↓", "description": "move ↓" },
+      { "key": "⌘ ⇧ ↑", "description": "move ↑" },
+      { "key": "⌘ ⇧ ←", "description": "move ←" },
+      { "key": "⌘ ⇧ →", "description": "move →" },
+      { "key": "⌃ ⎇ Q", "description": "alt-tab advanced off" },
+      { "key": "⌃ ⎇ ⭾", "description": "alt-tab advanced on" },
+      { "key": "⌃ ⎇ /", "description": "windows list off" },
+      { "key": "⌃ ⎇ ~", "description": "windows list on" }
+    ]
+  },
+  {
+    "name": "Workspaces",
+    "shortcuts": [
+      { "key": "⌘ PgDn / ⌃ ⎇ ↓", "description": "next" },
+      { "key": "⌘ PgUp / ⌃ ⎇ ↑", "description": "previous" },
+      { "key": "⌘ ⎇ ← / ⌃ ⎇ ←", "description": "left" },
+      { "key": "⌘ ⎇ → / ⌃ ⎇ →", "description": "right" },
+      { "key": "⌘ Home", "description": "first" },
+      { "key": "⌘ End", "description": "last" },
+      { "key": "⌘ ⇧ PgDn", "description": "move window ↓" },
+      { "key": "⌘ ⇧ PgUp", "description": "move window ↑" },
+      { "key": "⌘ ⇧ Home", "description": "move window first" },
+      { "key": "⌘ ⇧ End", "description": "move window last" }
+    ]
+  },
+  {
+    "name": "System",
+    "shortcuts": [
+      { "key": "⌘ ,", "description": "settings" },
+      { "key": "⎇ ⌃ ;", "description": "shortcuts settings" },
+      { "key": "⎇ F2", "description": "run gnome panel" },
+      { "key": "⎇ F1", "description": "menu" },
+      { "key": "⌘ ␣", "description": "layout" },
+      { "key": "⇧ ⌘ ␣", "description": "layout back" },
+      { "key": "⌘ P", "description": "display" },
+      { "key": "⌘ ⎋", "description": "restore" },
+      { "key": "⌃ ⇧ ⭾ / ⌃ ⭾", "description": "panels" },
+      { "key": "⌃ ⎇ ⎋", "description": "cycle panels" },
+      { "key": "⌘ L", "description": "lock" },
+      { "key": "⌃ ⎇ Del", "description": "logout" },
+      { "key": "⌃ ⎇ ⌘ End", "description": "reboot" },
+      { "key": "⌘ E", "description": "files" },
+      { "key": "⌘ F1", "description": "help" },
+      { "key": "⌘ F3", "description": "browser" },
+      { "key": "⎇ ⌘ 8", "description": "zoom" },
+      { "key": "⎇ ⌘ =", "description": "zoom +" },
+      { "key": "⎇ ⌘ -", "description": "zoom -" },
+      { "key": "⎇ ⌘ S", "description": "reader" },
+      { "key": "⌃ ⎇ ⌘ -", "description": "reset gnome" }
+    ]
+  },
+  {
+    "name": "Shell & Launcher",
+    "shortcuts": [
+      { "key": "⌘ A", "description": "apps" },
+      { "key": "⌘ N", "description": "notify" },
+      { "key": "⌃ ⌘ V", "description": "tray" },
+      { "key": "⌃ ⌘ S", "description": "quick" },
+      { "key": "⌘ 1–9", "description": "switch app" },
+      { "key": "⌘ ⌃ 1–9", "description": "new app" },
+      { "key": "⌘ ⎇ ↓", "description": "overview ↓" },
+      { "key": "⌘ ⎇ ↑", "description": "overview ↑" },
+      { "key": "⌘ .", "description": "characters" },
+      { "key": "⎇ ⌘ ;", "description": "keyboard" }
+    ]
+  },
+  {
+    "name": "Apps & Terminal",
+    "shortcuts": [
+      { "key": "⌘ T", "description": "terminal" },
+      { "key": "⌃ ⎇ T", "description": "konsole" },
+      { "key": "⌃ ⎇ 1", "description": "konsole script" },
+      { "key": "⌃ ⎇ 2", "description": "konsole github" },
+      { "key": "⌃ ⎇ 3", "description": "konsole notes" },
+      { "key": "⎇ ⌘ E", "description": "dolphin" },
+      { "key": "⇧ ⌃ ⎋", "description": "mission center" },
+      { "key": "⎇ ⌘ F", "description": "forge off" },
+      { "key": "⎇ ⌘ T", "description": "forge on" }
+    ]
+  }
+]
