@@ -1,0 +1,48 @@
+[global]
+separator=true
+separator_block_width=10
+
+# ================================
+# MÍDIA E ÁUDIO
+# ================================
+[media]
+command=~/.config/i3blocks/scripts/now-playing.sh
+interval=1
+color=#cba6f7
+
+[volume]
+label=
+command=~/.config/i3blocks/scripts/volume.sh
+interval=1
+
+[bluetooth]
+label=
+command=~/.config/i3blocks/scripts/bluetooth.sh
+interval=5
+color=#89b4fa
+
+
+# ================================
+# SISTEMA
+# ================================
+[cpu]
+label=
+command=grep 'cpu ' /proc/stat | awk '{u=($2+$4)*100/($2+$4+$5)} END {printf "%.0f%%", u}'
+interval=2
+color=#f9e2af
+
+[memory]
+label=
+command=free | awk '/Mem:/ {printf "%.0f%% (%dG/%dG)", $3/$2*100, $3/1024/1024, $2/1024/1024}'
+interval=5
+color=#a6e3a1
+
+
+# ================================
+# DATA E HORA
+# ================================
+[time]
+label=
+command=date '+%d/%m %H:%M'
+interval=1
+color=#f5c2e7

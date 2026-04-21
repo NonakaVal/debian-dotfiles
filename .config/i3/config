@@ -4,13 +4,15 @@
 # VARIÁVEIS BASE
 # ================================
 set $mod Mod4
-set $term konsole
+set $term kitty
 set $refresh_i3status killall -SIGUSR1 i3status
+exec_always --no-startup-id greenclip daemon
 
 # ================================
 # VISUAL E TEMA
 # ================================
-font pango:Noto Sans 10
+font: "JetBrainsMono Nerd Font 14";
+
 
 default_border none
 default_floating_border none
@@ -31,20 +33,23 @@ exec --no-startup-id dex --autostart --environment i3
 exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork
 exec --no-startup-id nm-applet
 exec --no-startup-id sh -c 'eval "$(keychain --eval --quiet id_ed25519)"'
-exec_always --no-startup-id pkill greenclip; ~/.local/bin/greenclip daemon
 
 # Interface
 exec_always --no-startup-id feh --bg-fill ~/Imagens/walls/wallhaven-3qwx1v.jpg
 exec_always --no-startup-id picom --config ~/.config/picom/picom.conf
+bindsym $mod+comma exec --no-startup-id konsole -e nano ~/.config/i3/config
 
 # ================================
 # APLICATIVOS E LAUNCHERS
 # ================================
 # Terminais e Editores
 bindsym $mod+Return exec $term
-bindsym Control+Mod1+1 exec --no-startup-id $term --profile github
-bindsym $mod+comma exec --no-startup-id $term -e nano ~/.config/i3/config
+bindsym Ctrl+Mod1+1 exec --no-startup-id kitty --directory ~/Documentos/Github
+bindsym Ctrl+Mod1+2 exec --no-startup-id kitty --directory "$HOME/.config"
 bindsym $mod+n exec mousepad
+
+# Kitty
+
 
 # Rofi (Menus)
 bindsym $mod+Control+d exec --no-startup-id rofi -show run
@@ -56,7 +61,7 @@ bindsym $mod+Shift+p exec ~/.config/rofi/powermenu.sh
 
 # Utilitários
 bindsym Print exec --no-startup-id scrot -s ~/Imagens/%Y-%m-%d_%H-%M-%S.png
-bindsym $mod+Mod1+F1 exec --no-startup-id loginctl activate 7
+bindsym $mod+Mod1+F1 exec --no-startup-id loginctl activate 8
 
 # ================================
 # TECLAS DE MÍDIA
@@ -173,3 +178,17 @@ bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes' 'i3-msg e
 bar {
     status_command i3blocks
 }
+
+
+exec_always --no-startup-id lxpolkit
+bindsym $mod+a exec ~/.config/scripts/fav-apps.sh
+bindsym $mod+Mod1+e exec --no-startup-id dolphin
+
+
+# Navegar entre workspaces
+bindsym $mod+Next workspace next
+bindsym $mod+Prior workspace prev
+
+# Mover a janela atual para a próxima/anterior workspace
+bindsym $mod+Shift+Next move container to workspace next
+bindsym $mod+Shift+Prior move container to workspace prev
