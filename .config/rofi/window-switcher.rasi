@@ -1,0 +1,14 @@
+listview {
+    spacing: 8;
+    scrollbar: false;
+}
+
+element {
+    orientation: vertical;
+    padding: 6px;
+    border-radius: 6px;
+}
+
+element-text {
+    vertical-align: 0.5;
+}  
