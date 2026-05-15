@@ -10,12 +10,12 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Configuração — caminhos padrão (sobrescritos pelo arquivo de config)
 # -----------------------------------------------------------------------------
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/snippet-holder"
-CONFIG_FILE="$CONFIG_DIR/config"
-DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/snippet-holder"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/snippet-holder"
-
 NOTES_DIR="$HOME/Documentos/Notes/01 Snippets"
+CONFIG_DIR="$NOTES_DIR/.config"
+CONFIG_FILE="$CONFIG_DIR/config"
+DATA_DIR="$NOTES_DIR/.data"
+CACHE_DIR="$NOTES_DIR/.cache"
+
 EDITOR_APP="mousepad"
 DEFAULT_SORT="recent"
 HISTORY_LIMIT="20"
@@ -190,7 +190,7 @@ get_snippet_tags() {
 
 # Todas as tags únicas do vault (para o seletor)
 collect_all_tags() {
-    find "$NOTES_DIR" -type f -name "*.md" -print0 2>/dev/null \
+    find "$NOTES_DIR" \( -path "$CONFIG_DIR" -o -path "$DATA_DIR" -o -path "$CACHE_DIR" \) -prune -o -type f -name "*.md" -print0 2>/dev/null \
         | while IFS= read -r -d '' f; do get_snippet_tags "$f"; done \
         | sort -u | grep -v '^$'
 }
@@ -337,7 +337,7 @@ list_entries() {
     # Subpastas
     while IFS= read -r subdir; do
         printf "%s\tDIR\t%s\n" "$(_fmt_dir_entry "$subdir")" "$subdir"
-    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -f)
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type d ! -name '.config' ! -name '.data' ! -name '.cache' 2>/dev/null | sort -f)
 
     # Arquivos da pasta atual
     if [ "$sort_mode" = "recent" ]; then
@@ -355,12 +355,12 @@ list_entries() {
 
     # Separador + todos os snippets do vault para busca integrada
     local total
-    total=$(find "$NOTES_DIR" -type f -name "*.md" 2>/dev/null | wc -l)
+    total=$(find "$NOTES_DIR" \( -path "$CONFIG_DIR" -o -path "$DATA_DIR" -o -path "$CACHE_DIR" \) -prune -o -type f -name "*.md" 2>/dev/null | wc -l)
     [ "$total" -eq 0 ] && return
 
     printf "──────────────────────────────────────────────────────────────────────────\tSEP\t\n"
 
-    find "$NOTES_DIR" -type f -name "*.md" -print0 2>/dev/null | sort -z \
+    find "$NOTES_DIR" \( -path "$CONFIG_DIR" -o -path "$DATA_DIR" -o -path "$CACHE_DIR" \) -prune -o -type f -name "*.md" -print0 2>/dev/null | sort -z \
         | while IFS= read -r -d '' file; do
             printf "%s\tFILE\t%s\n" "$(_fmt_file_entry "$file" 1)" "$file"
         done
@@ -740,7 +740,7 @@ browse_by_tag() {
             name="$(basename "$file" .md)"
             results="${results}${name}\tFILE\t${file}\n"
         fi
-    done < <(find "$NOTES_DIR" -type f -name "*.md" -print0 2>/dev/null | sort -z)
+    done < <(find "$NOTES_DIR" \( -path "$CONFIG_DIR" -o -path "$DATA_DIR" -o -path "$CACHE_DIR" \) -prune -o -type f -name "*.md" -print0 2>/dev/null | sort -z)
 
     if [ -z "$results" ]; then
         notify-send "Trechos" "Nenhum snippet com tag: $tag"
@@ -856,7 +856,7 @@ main_menu() {
             ;;
         "Exportar")
             local dest timestamp archive
-            dest="${XDG_DOWNLOAD_DIR:-$HOME}"
+            dest="$NOTES_DIR"
             timestamp=$(date +%Y%m%d_%H%M%S)
             archive="$dest/snippet-holder-export-${timestamp}.tar.gz"
             tar -czf "$archive" -C "$(dirname "$NOTES_DIR")" "$(basename "$NOTES_DIR")" 2>/dev/null

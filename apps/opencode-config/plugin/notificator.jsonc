@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "showDesktopNotification": {
+    "enabled": true
+  },
+  "playSound": {
+    "enabled": true,
+    "fileSeed": 0
+  }
+}

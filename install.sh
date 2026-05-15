@@ -114,11 +114,62 @@ install_bin() {
     fi
 }
 
+install_opencode_config() {
+    log "Installing opencode config (~/.config/opencode/)..."
+    local src="${DOTFILES_DIR}/apps/opencode-config"
+    local dest="$HOME/.config/opencode"
+
+    if [ -d "$src" ]; then
+        create_backup ".config/opencode"
+        if [ -L "$dest" ]; then
+            rm "$dest"
+        elif [ -d "$dest" ]; then
+            rm -rf "$dest"
+        fi
+        create_symlink "$src" "$dest"
+    fi
+}
+
+install_opencode() {
+    log "Installing opencode data (~/.opencode/)..."
+    local src="${DOTFILES_DIR}/apps/opencode"
+    local dest="$HOME/.opencode"
+
+    if [ -d "$src" ]; then
+        create_backup ".opencode"
+        if [ -L "$dest" ]; then
+            rm "$dest"
+        elif [ -d "$dest" ]; then
+            rm -rf "$dest"
+        fi
+        create_symlink "$src" "$dest"
+    fi
+}
+
+install_agents() {
+    log "Installing agents (~/.agents/)..."
+    local src="${DOTFILES_DIR}/apps/agents"
+    local dest="$HOME/.agents"
+
+    if [ -d "$src" ]; then
+        create_backup ".agents"
+        if [ -L "$dest" ]; then
+            rm "$dest"
+        elif [ -d "$dest" ]; then
+            rm -rf "$dest"
+        fi
+        create_symlink "$src" "$dest"
+    fi
+}
+
 install_all() {
     log "Starting full installation..."
     install_shell
     install_desktop
     install_apps
+    install_opencode_config
+    install_opencode
+    install_agents
     install_bin
     log "Installation completed!"
 }
@@ -132,6 +183,9 @@ Commands:
     shell           Install shell configurations only
     desktop         Install desktop configurations only
     apps            Install application configurations only
+    opencode-config Install opencode config (~/.config/opencode) only
+    opencode        Install opencode data (~/.opencode) only
+    agents          Install agents (~/.agents) only
     bin             Install user scripts only
     help            Show this help message
 
@@ -155,7 +209,7 @@ if [[ $# -eq 0 ]]; then
 else
     while [[ $# -gt 0 ]]; do
         case $1 in
-            all|shell|desktop|apps|bin|help)
+            all|shell|desktop|apps|opencode-config|opencode|agents|bin|help)
                 COMPONENT=$1
                 shift
                 ;;
@@ -198,5 +252,8 @@ case $COMPONENT in
     shell)  install_shell ;;
     desktop) install_desktop ;;
     apps)   install_apps ;;
+    opencode-config) install_opencode_config ;;
+    opencode) install_opencode ;;
+    agents) install_agents ;;
     bin)    install_bin ;;
 esac
