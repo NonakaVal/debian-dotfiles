@@ -7,6 +7,8 @@
 
 set -euo pipefail
 
+source "$HOME/.local/bin/note_lib.sh"
+
 # -----------------------------------------------------------------------------
 # Configuração — caminhos padrão (sobrescritos pelo arquivo de config)
 # -----------------------------------------------------------------------------
@@ -71,16 +73,9 @@ rofi_menu() {
 # Clipboard
 # -----------------------------------------------------------------------------
 copy_to_clipboard() {
-    if command -v wl-copy >/dev/null 2>&1 && [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-        wl-copy
-    elif command -v xclip >/dev/null 2>&1; then
-        xclip -selection clipboard
-    elif command -v wl-copy >/dev/null 2>&1; then
-        wl-copy
-    else
-        notify-send "Trechos" "Instale xclip ou wl-clipboard."
-        return 1
-    fi
+    local text
+    text="$(cat)"
+    note_lib_clipboard_copy "$text"
 }
 
 read_clipboard() {
@@ -98,6 +93,7 @@ read_clipboard() {
 # -----------------------------------------------------------------------------
 add_to_history() {
     local file="$1"
+    touch "$file"
     grep -vFx "$file" "$HISTORY_FILE" 2>/dev/null > "$HISTORY_FILE.tmp" || true
     echo "$file" | cat - "$HISTORY_FILE.tmp" > "$HISTORY_FILE"
     head -n "$HISTORY_LIMIT" "$HISTORY_FILE" > "$HISTORY_FILE.tmp"
@@ -126,7 +122,7 @@ is_favorite() {
 # Filesystem — helpers
 # -----------------------------------------------------------------------------
 safe_filename() {
-    echo "$1" | sed 's/[\/:*?"<>|]/-/g' | sed 's/[ ]*$//'
+    note_lib_safe_filename "$1"
 }
 
 short_path() {
@@ -198,28 +194,16 @@ collect_all_tags() {
 # -----------------------------------------------------------------------------
 # Conteúdo dos snippets
 # -----------------------------------------------------------------------------
-get_snippet_code() {
-    awk '
-        /^```/ {
-            count++
-            if (count == 1) next
-            if (count == 2) exit
-        }
-        count == 1 { print }
-    ' "$1"
-}
-
 get_snippet_preview() {
     local file="$1"
     local code
-    code="$(get_snippet_code "$file")"
+    code="$(note_lib_block_content "$file" 1)"
 
-    local lines
+    local lines total
     lines="$(echo "$code" | head -n "$PREVIEW_LINES" | while IFS= read -r line; do
         echo "$line" | tr '\r' ' ' | sed 's/\t/    /g' | cut -c 1-80
     done)"
 
-    local total
     total=$(echo "$code" | wc -l)
     [ "$total" -gt "$PREVIEW_LINES" ] && lines="$(echo "$lines"; echo "  ... (+$((total - PREVIEW_LINES)) linhas)")"
 
@@ -545,8 +529,11 @@ show_actions() {
     local fav_label
     is_favorite "$file" && fav_label="Desfavoritar ⭐" || fav_label="Favoritar"
 
+    local block_count=0
+    block_count=$(note_lib_extract_blocks "$file" | wc -l)
+
     local options
-    options="$(printf "Copiar\nEditar\nGerenciar tags\nApagar\n%s" "$fav_label")"
+    options="$(printf "Copiar\nDigitar\nEditar\nGerenciar tags\nApagar\n%s" "$fav_label")"
 
     action=$(echo "$options" | rofi_menu \
         -p "$name" \
@@ -554,11 +541,44 @@ show_actions() {
 
     case "$action" in
         "Copiar")
-            local code
-            code="$(get_snippet_code "$file")"
+            local code block_idx
+            if (( block_count > 1 )); then
+                block_idx=$(
+                    note_lib_extract_blocks "$file" | while IFS=$'\t' read -r idx lang start end preview; do
+                        printf "bloco %s  %s  %s\n" "$idx" "${lang:-text}" "$preview"
+                    done | rofi_menu -p "bloco" -mesg "$name tem $block_count blocos"
+                ) || return 0
+                [[ -z "$block_idx" ]] && return 0
+                read -r _ block_idx _ <<< "$block_idx"
+                code="$(note_lib_block_content "$file" "$block_idx")"
+            else
+                code="$(note_lib_block_content "$file" 1)"
+            fi
             echo -n "$code" | copy_to_clipboard
             add_to_history "$file"
             notify-send "Trechos" "\"$name\" copiado."
+            return 99
+            ;;
+        "Digitar")
+            local code block_idx
+            if (( block_count > 1 )); then
+                block_idx=$(
+                    note_lib_extract_blocks "$file" | while IFS=$'\t' read -r idx lang start end preview; do
+                        printf "bloco %s  %s  %s\n" "$idx" "${lang:-text}" "$preview"
+                    done | rofi_menu -p "bloco" -mesg "$name tem $block_count blocos"
+                ) || return 0
+                [[ -z "$block_idx" ]] && return 0
+                read -r _ block_idx _ <<< "$block_idx"
+                code="$(note_lib_block_content "$file" "$block_idx")"
+            else
+                code="$(note_lib_block_content "$file" 1)"
+            fi
+            if (( ${#code} > 5000 )); then
+                code="${code:0:5000}"
+            fi
+            add_to_history "$file"
+            sleep 0.5
+            note_lib_type_text "$code" 50
             return 99
             ;;
         "Editar")
@@ -757,18 +777,64 @@ browse_by_tag() {
 }
 
 # -----------------------------------------------------------------------------
+# Trocar pasta via Rofi (Alt+w no browser)
+# -----------------------------------------------------------------------------
+_switch_folder() {
+    local current="$1"
+    local folders entries choice
+
+    entries="📁 . (raiz — 01 Snippets)"
+    folders=$(note_lib_list_snippet_folders "$NOTES_DIR")
+    if [ -n "$folders" ]; then
+        local ws_num=1
+        while IFS=$'\t' read -r name count; do
+            entries="$(printf '%s\n' "$entries" "${ws_num}. 📁 ${name} (${count} snippets)")"
+            ((ws_num++))
+        done <<< "$folders"
+    fi
+    entries="$(printf '%s\n' "$entries" "+ criar nova pasta")"
+
+    choice=$(printf '%s\n' "$entries" | rofi_menu -p "ir para pasta") || { _switch_result="$current"; return; }
+    [ -z "$choice" ] && { _switch_result="$current"; return; }
+
+    if [[ "$choice" == "+ criar nova pasta" ]]; then
+        local name clean
+        name=$(rofi_menu -p "nome da pasta") || { _switch_result="$current"; return; }
+        [ -z "$name" ] && { _switch_result="$current"; return; }
+        clean="$(safe_filename "$name")"
+        mkdir -p "$NOTES_DIR/$clean"
+        _switch_result="$NOTES_DIR/$clean"
+    elif [[ "$choice" == "📁 . (raiz — 01 Snippets)" ]]; then
+        _switch_result="$NOTES_DIR"
+    else
+        local folder_name
+        folder_name=$(echo "$choice" | sed 's/^[0-9]*\. 📁 //' | sed 's/^📁 //' | sed 's/ ([0-9]* snippets)$//')
+        _switch_result="$NOTES_DIR/$folder_name"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Navegador de pastas (loop principal)
 # -----------------------------------------------------------------------------
 browser() {
-    local current_dir="$NOTES_DIR"
+    local current_dir="${1:-$NOTES_DIR}"
     local sort_mode="$DEFAULT_SORT"
 
     while true; do
-        local label msg entries selection ret
+        local label msg entries selection ret dir_summary
         label="$(short_path "$current_dir")"
+
+        dir_summary=""
+        local dir_count
+        dir_count=$(find "$current_dir" -mindepth 1 -maxdepth 1 -type f -name "*.md" 2>/dev/null | wc -l)
+        local sub_count
+        sub_count=$(find "$current_dir" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null | wc -l)
+        dir_summary="${dir_count} snippets"
+        (( sub_count > 0 )) && dir_summary="${dir_summary} · ${sub_count} pastas"
+
         [ "$sort_mode" = "recent" ] \
-            && msg="✚ Alt+n · 📁 Alt+g · ⇅ Alt+o · ← Alt+q · ↓ recentes" \
-            || msg="✚ Alt+n · 📁 Alt+g · ⇅ Alt+o · ← Alt+q · A-Z"
+            && msg="✚ Alt+n · 📁 Alt+g · ⇅ Alt+o · ← Alt+q · 📂 Alt+w · 🔢 Alt+1-9 · ↓ recentes · ${dir_summary}" \
+            || msg="✚ Alt+n · 📁 Alt+g · ⇅ Alt+o · ← Alt+q · 📂 Alt+w · 🔢 Alt+1-9 · A-Z · ${dir_summary}"
 
         entries="$(list_entries "$current_dir" "$sort_mode")"
 
@@ -780,7 +846,17 @@ browser() {
             -kb-custom-1 "Alt+n" \
             -kb-custom-2 "Alt+g" \
             -kb-custom-3 "Alt+o" \
-            -kb-custom-4 "Alt+q") || ret=$?
+            -kb-custom-4 "Alt+q" \
+            -kb-custom-5 "Alt+w" \
+            -kb-custom-6 "Alt+1" \
+            -kb-custom-7 "Alt+2" \
+            -kb-custom-8 "Alt+3" \
+            -kb-custom-9 "Alt+4" \
+            -kb-custom-10 "Alt+5" \
+            -kb-custom-11 "Alt+6" \
+            -kb-custom-12 "Alt+7" \
+            -kb-custom-13 "Alt+8" \
+            -kb-custom-14 "Alt+9") || ret=$?
 
         case "$ret" in
             10) new_snippet "$current_dir" ;;
@@ -794,6 +870,25 @@ browser() {
                 ;;
             13)
                 [ "$current_dir" != "$NOTES_DIR" ] && current_dir="$(dirname "$current_dir")"
+                ;;
+            14)
+                _switch_folder "$current_dir"
+                current_dir="$_switch_result"
+                unset _switch_result
+                ;;
+            15|16|17|18|19|20|21|22|23)
+                local ws_idx=$(( ret - 14 ))
+                local ws_folders
+                ws_folders=$(note_lib_list_snippet_folders "$NOTES_DIR")
+                if [ -n "$ws_folders" ]; then
+                    local ws_line
+                    ws_line=$(printf '%s\n' "$ws_folders" | sed -n "${ws_idx}p")
+                    if [ -n "$ws_line" ]; then
+                        local ws_name
+                        ws_name=$(printf '%s' "$ws_line" | cut -f1)
+                        current_dir="$NOTES_DIR/$ws_name"
+                    fi
+                fi
                 ;;
             0)
                 [ -z "$selection" ] && continue
@@ -818,15 +913,181 @@ browser() {
 }
 
 # -----------------------------------------------------------------------------
+# Busca de blocos no vault inteiro (T7)
+# -----------------------------------------------------------------------------
+browse_vault_blocks() {
+    note_lib_ensure_dirs
+
+    if note_lib_index_stale; then
+        notify-send "Trechos" "Indexando blocos do vault..." 2>/dev/null || true
+        note_lib_build_code_index
+    fi
+
+    local query
+    query=$(rofi_menu -p "buscar bloco" -mesg "Digite para buscar blocos de código no vault") || return 0
+    [ -z "$query" ] && return 0
+
+    local results
+    results=$(note_lib_search_index "$query")
+    if [ -z "$results" ]; then
+        notify-send "Trechos" "Nenhum bloco encontrado para: $query"
+        return 0
+    fi
+
+    # Build membership map from workspace cache
+    note_lib_ensure_workspace_cache
+    local membership_map=""
+    local cache_file="$NOTE_LIB_WORKSPACE_CACHE"
+    if [ -f "$cache_file" ]; then
+        membership_map=$(awk -F'\t' '{
+            key = $2 "|" $3
+            if (!seen[key]++) {
+                if (membership[key] != "") membership[key] = membership[key] "," $1
+                else membership[key] = $1
+            }
+        }
+        END {
+            for (k in membership) print k "\t" membership[k]
+        }' "$cache_file")
+    fi
+
+    local entries
+    entries=$(printf '%s\n' "$results" | awk -F'\t' -v map="$membership_map" '
+        BEGIN {
+            n = split(map, map_lines, "\n")
+            for (i = 1; i <= n; i++) {
+                split(map_lines[i], parts, "\t")
+                if (parts[1] != "") membership[parts[1]] = parts[2]
+            }
+        }
+        {
+            file = $1; idx = $2; lang = ($3 != "" ? $3 : "text"); preview = $4
+            label = file; sub(/.*\//, "", label); sub(/\.md$/, "", label)
+            badge = ""
+            key = file "|" idx
+            if (key in membership) badge = " \342\234\223 " membership[key]
+            printf "%s  %s  bloco %s  %s%s\n", label, lang, idx, preview, badge
+        }
+    ')
+
+    local chosen
+    chosen=$(printf '%s\n' "$entries" | rofi_menu -p "blocos") || return 0
+    [ -z "$chosen" ] && return 0
+
+    local line_num
+    line_num=$(printf '%s\n' "$entries" | grep -nFx "$chosen" | head -1 | cut -d: -f1)
+    local match
+    match=$(printf '%s\n' "$results" | sed -n "${line_num}p")
+    local file block_idx
+    file=$(printf '%s' "$match" | cut -f1)
+    block_idx=$(printf '%s' "$match" | cut -f2)
+
+    local code
+    code=$(note_lib_block_content "$NOTE_LIB_VAULT/$file" "$block_idx")
+
+    local action
+    action=$(printf '%s\n' "Copiar" "Digitar" "Salvar em pasta" "Abrir fonte" | \
+        rofi_menu -p "bloco $block_idx" -mesg "$(printf '%s' "$code" | head -15)") || return 0
+
+    case "$action" in
+        "Copiar")
+            printf '%s' "$code" | copy_to_clipboard
+            notify-send "Trechos" "Bloco copiado."
+            ;;
+        "Digitar")
+            if (( ${#code} > 5000 )); then code="${code:0:5000}"; fi
+            sleep 0.5
+            note_lib_type_text "$code" 50
+            ;;
+        "Salvar em pasta")
+            local target_dir
+            target_dir=$(_pick_target_folder) || return 0
+            [ -z "$target_dir" ] && return 0
+            mkdir -p "$target_dir"
+            note_lib_save_block "$NOTE_LIB_VAULT/$file" "$block_idx" "$target_dir"
+            notify-send "Trechos" "Bloco salvo em: $(short_path "$target_dir")"
+            ;;
+        "Abrir fonte")
+            "$EDITOR_APP" "$NOTE_LIB_VAULT/$file" 2>/dev/null || true
+            ;;
+    esac
+}
+
+_pick_target_folder() {
+    local folders
+    folders=$(note_lib_list_snippet_folders "$NOTES_DIR")
+
+    local entries
+    if [ -n "$folders" ]; then
+        entries=$(printf '%s\n' "$folders" | while IFS=$'\t' read -r name count; do
+            printf "📁 %s (%s snippets)\n" "$name" "$count"
+        done)
+    fi
+    entries="$(printf '%s\n' "$entries" "📁 . (raiz)" "+ criar nova pasta")"
+
+    local choice
+    choice=$(printf '%s\n' "$entries" | rofi_menu -p "salvar em") || return 1
+    [ -z "$choice" ] && return 1
+
+    if [[ "$choice" == "+ criar nova pasta" ]]; then
+        local name
+        name=$(rofi_menu -p "nome da pasta") || return 1
+        [ -z "$name" ] && return 1
+        local clean
+        clean="$(safe_filename "$name")"
+        printf '%s' "$NOTES_DIR/$clean"
+    elif [[ "$choice" == "📁 . (raiz)" ]]; then
+        printf '%s' "$NOTES_DIR"
+    else
+        local folder_name
+        folder_name=$(echo "$choice" | sed 's/^📁 //' | sed 's/ ([0-9]* snippets)$//')
+        printf '%s' "$NOTES_DIR/$folder_name"
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Menu principal
 # -----------------------------------------------------------------------------
 main_menu() {
+    # Build dynamic workspace entries
+    local ws_entries=""
+    note_lib_ensure_workspace_cache
+    local ws_list
+    ws_list=$(note_lib_workspace_list_with_info "$NOTES_DIR")
+    if [ -n "$ws_list" ]; then
+        local ws_num=1
+        while IFS=$'\t' read -r ws_name ws_count ws_date; do
+            [ -z "$ws_name" ] && continue
+            ws_entries="$(printf '%s\n' "$ws_entries" "📂 ${ws_num}. ${ws_name} (${ws_count} snippets)")"
+            ((ws_num++))
+        done <<< "$ws_list"
+    fi
+
+    local separator="──────────────────────────────────"
+
+    local static_options
+    static_options="$(printf "Navegar\nHistórico\nFavoritos\nBuscar por tag\nBuscar blocos (vault)\nConfigurações\nExportar\nImportar")"
+
     local options choice
-    options="$(printf "Navegar\nHistórico\nFavoritos\nBuscar por tag\nConfigurações\nExportar\nImportar")"
+    if [ -n "$ws_entries" ]; then
+        options="$(printf '%s\n%s\n%s' "$ws_entries" "$separator" "$static_options")"
+    else
+        options="$static_options"
+    fi
 
     choice=$(echo "$options" | rofi_menu -p "snippet-holder") || return 0
+    [ -z "$choice" ] && return 0
 
+    # Check if workspace entry was selected
     case "$choice" in
+        📂\ *)
+            local ws_name
+            ws_name=$(echo "$choice" | sed 's/^📂 [0-9]*\. //' | sed 's/ ([0-9]* snippets)$//')
+            local target_dir="$NOTES_DIR/$ws_name"
+            if [ -d "$target_dir" ]; then
+                browser "$target_dir"
+            fi
+            ;;
         "Navegar")
             browser
             ;;
@@ -850,6 +1111,9 @@ main_menu() {
             ;;
         "Buscar por tag")
             browse_by_tag
+            ;;
+        "Buscar blocos (vault)")
+            browse_vault_blocks
             ;;
         "Configurações")
             open_settings
